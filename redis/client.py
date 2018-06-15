@@ -688,6 +688,13 @@ class StrictRedis(object):
         """
         return PubSub(self.connection_pool, **kwargs)
 
+    def stream(self, **kwargs):
+        """
+        Return an iterable Streams object. With this object, you can
+        iterate through multiple redis streams.
+        """
+        return Stream(self.connection_pool, **kwargs)
+
     # COMMAND EXECUTION AND PROTOCOL PARSING
     def execute_command(self, *args, **options):
         "Execute a command and return a parsed response"
@@ -2455,6 +2462,125 @@ class Redis(StrictRedis):
         return self.execute_command('ZADD', name, *pieces)
 
 
+class Stream(object):
+    """
+    Stream is an iterator object that provides record-by-record access to a
+    collection of Redis Streams. Messages are returned in order of index, regardless of stream.
+
+    Stream names and starting id's are provided through kwargs. If 'block' is set, than after 'block' ms
+    a timeout response will be returned (default None) but iteration will continue. If 'block' is left as
+    None, then iteration will stop if no new data arrives. Iteration will also stop after a nonzero block
+    time if 'stop_on_timeout' is explicitly set.
+    """
+    def __init__(self, redis_conn, count=100, block=None, timeout_response=None, stop_on_timeout=False, **kwargs):
+        self.BIG_NUMBER = 99999999999999
+        self.block = block if block else 1
+        self.topic_hit_limit = set()
+        self.streams = kwargs
+        self.connection = redis_conn if isinstance(redis_conn, StrictRedis) else None
+        self.connection_pool = redis_conn if isinstance(redis_conn, ConnectionPool) else None
+        self.count = count
+        self.timeout_response = timeout_response
+        self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
+        self.update_last_and_limit()
+        self.stop_on_timeout = stop_on_timeout if block else True
+
+    def __del__(self):
+        try:
+            # if this object went out of scope prior to shutting down
+            # subscriptions, close the connection manually before
+            # returning it to the connection pool
+            self.reset()
+        except Exception:
+            pass
+
+    def reset(self):
+        if self.connection:
+            self.connection.disconnect()
+            self.connection.clear_connect_callbacks()
+            self.connection_pool.release(self.connection)
+            self.connection = None
+        self.channels = {}
+        self.patterns = {}
+
+    def close(self):
+        self.reset()
+
+    def _execute(self, command, *args):
+        if self.connection is None and self.connection_pool is not None:
+            self.connection = self.connection_pool.get_connection(
+                'pubsub',
+                self.shard_hint
+            )
+            # register a callback that re-subscribes to any channels we
+            # were listening to when we were disconnected
+            self.connection.register_connect_callback(self.on_connect)
+        connection = self.connection
+        self._execute(connection, connection.send_command, *args)
+        try:
+            return command(*args)
+        except (ConnectionError, TimeoutError) as e:
+            self.connection.disconnect()
+            if not connection.retry_on_timeout and isinstance(e, TimeoutError):
+                raise
+            # Connect manually here. If the Redis server is down, this will
+            # fail and raise a ConnectionError as desired.
+            connection.connect()
+            # the ``on_connect`` callback should haven been called by the
+            # connection to resubscribe us to any channels and patterns we were
+            # previously listening to
+            return command(*args)
+
+    def update_last_and_limit(self):
+        self.topic_hit_limit = set()
+        if self.buffer_dict is not None:
+            for stream_name, record_list in self.buffer_dict.items():
+                if len(record_list):  # always yes?
+                    self.streams[stream_name] = record_list[-1][0]
+                if len(record_list) == self.count:
+                    self.topic_hit_limit.add(stream_name)
+
+    def get_lowest(self):
+        lowest_timestamp_str = self.BIG_NUMBER
+        lowest_index = 9999
+        lowest_stream = None
+        for stream_name, record_list in self.buffer_dict.items():
+            if len(record_list):
+                if stream_name in self.topic_hit_limit and len(record_list) == 0:
+                    temp_dict = self.connection.xread(self.count, 0,
+                                                      **{stream_name: self.streams[stream_name]})
+                    self.buffer_dict[stream_name] = temp_dict[stream_name]
+                    self.update_last_and_limit()
+
+                if record_list[0][0][0:13] < lowest_timestamp_str:
+                    lowest_timestamp_str = record_list[0][0][0:13]
+                    lowest_index = int(record_list[0][0][14:])
+                    lowest_stream = stream_name
+                elif record_list[0][0][0:13] == lowest_timestamp_str:
+                    lowest_index = int(record_list[0][0][14:])
+                    lowest_stream = stream_name
+        return lowest_timestamp_str, lowest_index, lowest_stream
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.buffer_dict is None or not any(self.buffer_dict.values()):
+            self.buffer_dict = self.connection.xread(self.count, self.block, **self.streams)
+            if self.buffer_dict is None:
+                if self.stop_on_timeout:
+                    raise StopIteration
+                return self.timeout_response
+            self.update_last_and_limit()
+
+        (lowest_timestamp_str, lowest_index, lowest_stream) = self.get_lowest()
+        if lowest_timestamp_str < self.BIG_NUMBER:
+            entry = self.buffer_dict[lowest_stream].pop(0)
+            return lowest_stream, entry[0], entry[1]
+
+    next = __next__  # Python 2 compatibility
+
+
 class PubSub(object):
     """
     PubSub provides publish, subscribe and listen support to Redis channels.
@@ -2527,15 +2653,8 @@ class PubSub(object):
         # subscribed to one or more channels
 
         if self.connection is None:
-            self.connection = self.connection_pool.get_connection(
-                'pubsub',
-                self.shard_hint
-            )
-            # register a callback that re-subscribes to any channels we
-            # were listening to when we were disconnected
-            self.connection.register_connect_callback(self.on_connect)
-        connection = self.connection
-        self._execute(connection, connection.send_command, *args)
+            self.connection = self.connection_pool.get_connection()
+        self._execute(self.connection, connection.send_command, *args)
 
     def _execute(self, connection, command, *args):
         try:
