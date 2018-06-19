@@ -1,13 +1,3 @@
-from __future__ import with_statement
-import pytest
-import time
-
-import redis
-from redis.exceptions import ConnectionError
-from redis._compat import basestring, u, unichr, b
-
-from .conftest import r as _redis_client
-from .conftest import skip_if_server_version_lt
 
 
 def wait_for_message(pubsub, timeout=0.1, ignore_subscribe_messages=False):

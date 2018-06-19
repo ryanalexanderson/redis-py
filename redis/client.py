@@ -688,13 +688,13 @@ class StrictRedis(object):
         """
         return PubSub(self.connection_pool, **kwargs)
 
-    def stream(self, count=100, block=None, timeout_response=None,
+    def streams(self, count=100, block=None, timeout_response=None,
                      stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
         """
         Return an iterable Streams object. With this object, you can
         iterate through multiple redis streams.
         """
-        return Stream(self.connection_pool, count=count, block=block,
+        return Streams(self.connection_pool, count=count, block=block,
                       timeout_response=timeout_response, stop_on_timeout=stop_on_timeout,
                       raise_connection_exceptions=raise_connection_exceptions, **kwargs)
 
@@ -2465,7 +2465,7 @@ class Redis(StrictRedis):
         return self.execute_command('ZADD', name, *pieces)
 
 
-class Stream(object):
+class Streams(object):
     """
     Stream is an iterator object that provides record-by-record access to a
     collection of Redis Streams. Messages are returned in order of index, regardless of stream.
