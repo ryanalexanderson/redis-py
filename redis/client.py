@@ -688,12 +688,15 @@ class StrictRedis(object):
         """
         return PubSub(self.connection_pool, **kwargs)
 
-    def stream(self, **kwargs):
+    def stream(self, count=100, block=None, timeout_response=None,
+                     stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
         """
         Return an iterable Streams object. With this object, you can
         iterate through multiple redis streams.
         """
-        return Stream(self.connection_pool, **kwargs)
+        return Stream(self.connection_pool, count=count, block=block,
+                      timeout_response=timeout_response, stop_on_timeout=stop_on_timeout,
+                      raise_connection_exceptions=raise_connection_exceptions, **kwargs)
 
     # COMMAND EXECUTION AND PROTOCOL PARSING
     def execute_command(self, *args, **options):
@@ -2470,66 +2473,28 @@ class Stream(object):
     Stream names and starting id's are provided through kwargs. If 'block' is set, than after 'block' ms
     a timeout response will be returned (default None) but iteration will continue. If 'block' is left as
     None, then iteration will stop if no new data arrives. Iteration will also stop after a nonzero block
-    time if 'stop_on_timeout' is explicitly set.
+    time if 'stop_on_timeout' is explicitly set. Redis Exceptions will be raised during iteration
+    if stop_on_exception is True (otherwise, the exception will be returned but not raised).
     """
-    def __init__(self, redis_conn, count=100, block=None, timeout_response=None, stop_on_timeout=False, **kwargs):
-        self.BIG_NUMBER = 99999999999999
+    def __init__(self, redis_conn, count=100, block=None, timeout_response=None,
+                 stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
+        self.BIG_NUMBER = b"99999999999999"
         self.block = block if block else 1
         self.topic_hit_limit = set()
         self.streams = kwargs
-        self.connection = redis_conn if isinstance(redis_conn, StrictRedis) else None
-        self.connection_pool = redis_conn if isinstance(redis_conn, ConnectionPool) else None
+        if isinstance(redis_conn, StrictRedis):
+            self.connection_pool = redis_conn.connection_pool
+            self.connection = redis_conn
+        elif isinstance(redis_conn, ConnectionPool):
+            self.connection_pool = redis_conn
+            self.connection = StrictRedis(connection_pool=self.connection_pool)
         self.count = count
         self.timeout_response = timeout_response
         self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
-
-    def __del__(self):
-        try:
-            # if this object went out of scope prior to shutting down
-            # subscriptions, close the connection manually before
-            # returning it to the connection pool
-            self.reset()
-        except Exception:
-            pass
-
-    def reset(self):
-        if self.connection:
-            self.connection.disconnect()
-            self.connection.clear_connect_callbacks()
-            self.connection_pool.release(self.connection)
-            self.connection = None
-        self.channels = {}
-        self.patterns = {}
-
-    def close(self):
-        self.reset()
-
-    def _execute(self, command, *args):
-        if self.connection is None and self.connection_pool is not None:
-            self.connection = self.connection_pool.get_connection(
-                'pubsub',
-                self.shard_hint
-            )
-            # register a callback that re-subscribes to any channels we
-            # were listening to when we were disconnected
-            self.connection.register_connect_callback(self.on_connect)
-        connection = self.connection
-        self._execute(connection, connection.send_command, *args)
-        try:
-            return command(*args)
-        except (ConnectionError, TimeoutError) as e:
-            self.connection.disconnect()
-            if not connection.retry_on_timeout and isinstance(e, TimeoutError):
-                raise
-            # Connect manually here. If the Redis server is down, this will
-            # fail and raise a ConnectionError as desired.
-            connection.connect()
-            # the ``on_connect`` callback should haven been called by the
-            # connection to resubscribe us to any channels and patterns we were
-            # previously listening to
-            return command(*args)
+        self.raise_connection_exceptions = raise_connection_exceptions
+        self.connectionError = False
 
     def update_last_and_limit(self):
         self.topic_hit_limit = set()
@@ -2561,12 +2526,26 @@ class Stream(object):
                     lowest_stream = stream_name
         return lowest_timestamp_str, lowest_index, lowest_stream
 
+    def resolve_possible_connection_errors(self):
+        if self.connectionError:
+            self.connection = StrictRedis(connection_pool=self.connection_pool)
+            self.connectionError = False
+
     def __iter__(self):
         return self
 
     def __next__(self):
         if self.buffer_dict is None or not any(self.buffer_dict.values()):
-            self.buffer_dict = self.connection.xread(self.count, self.block, **self.streams)
+            self.resolve_possible_connection_errors()
+            try:
+                self.buffer_dict = self.connection.xread(self.count, self.block, **self.streams)
+            except ConnectionError as e:
+                if self.raise_connection_exceptions:
+                    raise e
+                else:
+                    self.connectionError = True
+                    time.sleep(self.block/1000.0)
+                    return e
             if self.buffer_dict is None:
                 if self.stop_on_timeout:
                     raise StopIteration
