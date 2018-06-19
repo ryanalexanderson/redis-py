@@ -2522,8 +2522,9 @@ class Stream(object):
                     lowest_index = int(record_list[0][0][14:])
                     lowest_stream = stream_name
                 elif record_list[0][0][0:13] == lowest_timestamp_str:
-                    lowest_index = int(record_list[0][0][14:])
-                    lowest_stream = stream_name
+                    if int(record_list[0][0][14:]) < lowest_index:
+                        lowest_index = int(record_list[0][0][14:])
+                        lowest_stream = stream_name
         return lowest_timestamp_str, lowest_index, lowest_stream
 
     def resolve_possible_connection_errors(self):
