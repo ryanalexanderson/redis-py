@@ -2470,18 +2470,28 @@ class Streams(object):
     Stream is an iterator object that provides record-by-record access to a
     collection of Redis Streams. Messages are returned in order of index, regardless of stream.
 
-    Stream names and starting id's are provided through kwargs. If 'block' is set, than after 'block' ms
-    a timeout response will be returned (default None) but iteration will continue. If 'block' is left as
-    None, then iteration will stop if no new data arrives. Iteration will also stop after a nonzero block
-    time if 'stop_on_timeout' is explicitly set. Redis Exceptions will be raised during iteration
-    if stop_on_exception is True (otherwise, the exception will be returned but not raised).
+    Stream names and starting id's are provided through the 'stream' input dict and/or kwargs. If 'block'
+    is set, than after 'block' ms a timeout response will be returned (default None) but iteration will
+    continue. If 'block' is left as None, then iteration will stop if no new data arrives. Iteration will
+    also stop after a nonzero block time if 'stop_on_timeout' is explicitly set. Redis Exceptions will be
+    raised during iteration if stop_on_exception is True (otherwise, the exception will be returned but not raised).
     """
     def __init__(self, redis_conn, count=100, block=None, timeout_response=None,
-                 stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
+                 stop_on_timeout=False, raise_connection_exceptions=True, streams=None, **kwargs):
         self.BIG_NUMBER = b"99999999999999"
         self.block = block if block else 1
         self.topic_hit_limit = set()
-        self.streams = kwargs
+
+        if streams is None:
+            self.streams = {}
+        elif isinstance(streams, set) or isinstance(streams, list):
+            self.streams = dict([(x, "$") for x in streams])
+        elif isinstance(streams, dict):
+            self.streams = streams
+        else:
+            raise RedisError("streams must be a dict, set, list, or None.")
+
+        self.streams.update(kwargs)
         if isinstance(redis_conn, StrictRedis):
             self.connection_pool = redis_conn.connection_pool
             self.connection = redis_conn
@@ -2490,6 +2500,7 @@ class Streams(object):
             self.connection = StrictRedis(connection_pool=self.connection_pool)
         self.count = count
         self.timeout_response = timeout_response
+        self.sanitize_stream_starts()
         self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
@@ -2504,6 +2515,34 @@ class Streams(object):
                     self.streams[stream_name] = record_list[-1][0]
                 if len(record_list) == self.count:
                     self.topic_hit_limit.add(stream_name)
+
+    def sanitize_stream_starts(self):
+        for stream_name, next_index in self.streams.items():
+            bad_format = False
+            if next_index == "$" or next_index is None:
+                lastmsg = self.connection.xrevrange(stream_name, count=1)
+                if lastmsg:
+                    self.streams[stream_name] = lastmsg[0][0]
+                else:
+                    self.streams[stream_name] = 0
+            elif "-" in next_index:
+                split_string = next_index.split('-')
+                try:
+                    int(split_string[0])
+                    int(split_string[1])
+                except ValueError:
+                    bad_format = True
+            else:
+                try:
+                    int(next_index)
+                    self.streams[stream_name] = str(stream_name)+"-0"
+                except ValueError:
+                    bad_format = True
+
+            if bad_format:
+                raise ValueError("Streams values, if specified, must be integers, None, '$', or a Redis Index.")
+
+
 
     def get_lowest(self):
         lowest_timestamp_str = self.BIG_NUMBER
@@ -2559,6 +2598,9 @@ class Streams(object):
             return lowest_stream, entry[0], entry[1]
 
     next = __next__  # Python 2 compatibility
+
+    def __repr__(self):
+        return "<redis.client.Streams monitoring %d streams on %s" % (len(self.streams), repr(self.connection))
 
 
 class PubSub(object):
@@ -2634,7 +2676,7 @@ class PubSub(object):
 
         if self.connection is None:
             self.connection = self.connection_pool.get_connection()
-        self._execute(self.connection, connection.send_command, *args)
+        self._execute(self.connection, self.connection.send_command, *args)
 
     def _execute(self, connection, command, *args):
         try:

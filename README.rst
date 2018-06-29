@@ -552,7 +552,7 @@ messages, sorted by index, one at a time. One creates a Streams object as follow
 
 .. code-block:: pycon
 
-    >>> for this_message in r.streams(Stream0=0, Stream1=0, Stream2=0):
+    >>> for this_message in r.streams(Stream0=0, Stream1=None, Stream2=):
     >>>      print(this_message)
 
 This `r.streams` command returns a Streams object attached to the StrictRedis
@@ -579,7 +579,7 @@ iterator. They are reserved keywords and can therefore not be used as stream nam
 * **block**: (default: None) As with the raw XREAD command, this value sets the time in milliseconds to block and wait for incoming messages. After waiting for `block` milliseconds, the behaviour of the iterator is controlled by `stop_on_timeout` and `timeout_response`, as described below. If set to `None`, there is no blocking.
 * **stop_on_timeout**: (default: False) If set to True, after the `block` period is over, the iterator will return `None` (or the `timeout_response` object if defined). If set to False, the `StopIteration` exception will be internally raised, naturally ending the iteration.
 * **timeout_response**: (default: None) If `stop_on_timeout` is set to True, the object (of arbitrary type) defined by `timeout_response` will be returned in lieu of a message.
-* **raise_connection_exceptions**: If True, then ConnectionError exceptions will be raised normally. If False, the exceptions will be returned in lieu of a message but not raised, making the iterator robust to temporary loss of connectivity. The caller retains the ability to use isinstance(this_message, ConnectionError) to detect these exceptions and raise them, or simply wait for connectivity to return.
+* **raise_connection_exceptions**: (default: True) If True, then ConnectionError exceptions will be raised normally. If False, the exceptions will be returned in lieu of a message but not raised, making the iterator robust to temporary loss of connectivity. The caller retains the ability to use isinstance(this_message, ConnectionError) to detect these exceptions and raise them, or simply wait for connectivity to return.
 
 
 Lua Scripting
