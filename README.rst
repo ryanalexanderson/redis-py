@@ -556,7 +556,7 @@ messages, sorted by index, one at a time. One creates a Streams object as follow
     >>>      print(this_message)
 
 This `r.streams` command returns a Streams object attached to the StrictRedis
-instance `r`. The example above tracks the three Redis streams `Stream0`, `Stream1`, and `Stream2`. Stream0 is
+instance `r`. The example above tracks the four Redis streams `Stream0`, `Stream1`, `Stream2`, and `Stream3`. Stream0 is
 retrieved from epoch time_ms 0 (i.e. the entire message history), Stream1 and Stream2 begin listening for new
 messages from the present time, and Stream3 from an arbitrary epoch time (July 1 2018, in this case).
 
