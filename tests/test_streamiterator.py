@@ -5,6 +5,7 @@ import time
 import redis
 from redis.exceptions import ConnectionError
 from redis._compat import basestring, u, unichr, b
+from redis.client import StrictRedis
 
 from .conftest import sr
 from .conftest import skip_if_server_version_lt
@@ -82,6 +83,12 @@ class TestPubSubSubscribeUnsubscribe(object):
         msg = stream_no_stop.next()
         assert(msg is None)
 
+        # Add another msg to stream_no_stop and return it
+        srs.xadd("S3_" + long_suffix, index=4000)
+        msg = stream_no_stop.next()
+        assert(isinstance(msg, tuple) and msg[0] == "S3_" + long_suffix)
+
+
         # Listen as above with specified timeout object.
         stream_timeout_resp = srs.streams(streams=streams, block=10, timeout_response="Arbitrary Response")
         msg = stream_timeout_resp.next()
@@ -90,39 +97,30 @@ class TestPubSubSubscribeUnsubscribe(object):
     @skip_if_server_version_lt('4.9.0')
     def test_connection_exceptions(self, srs):
 
-        # Load the list, but listen at the end with no blocking.
-        stream_conn_loss = srs.streams(streams=streams, block=10)
+        # Default: losing connection raises connection error
+        strm_raise_conn_loss = srs.streams(streams=streams, block=10)
         srs.xadd("S3_" + long_suffix, index=4000)
-        msg = stream_conn_loss.next()
+        msg = strm_raise_conn_loss.next()
+        strm_raise_conn_loss.connection = StrictRedis(host=long_suffix)
+        with pytest.raises(redis.exceptions.ConnectionError):
+            msg = strm_raise_conn_loss.next()
 
-        # Listen at the end with specified blocking (10 ms) and stop_on_timeout.
-        stream_with_stop = srs.streams(streams=streams, block=10, stop_on_timeout=True)
-        with pytest.raises(StopIteration):
-            msg = stream_with_stop.next()
+        # returning connection error rather than raising it
+        strm_ret_conn_loss = srs.streams(streams=streams, block=10, raise_connection_exceptions=False)
+        srs.xadd("S3_" + long_suffix, index=4000)
+        msg = strm_ret_conn_loss.next()
+        real_connection = strm_ret_conn_loss.connection
 
-        # Listen at the end with specified blocking and no stop_on_timeout.
-        stream_no_stop = srs.streams(streams=streams, block=10)
-        msg = stream_no_stop.next()
-        assert (msg is None)
+        # simulate lost connection
+        strm_ret_conn_loss.connection = StrictRedis(host=long_suffix)
+        msg = strm_ret_conn_loss.next()
+        assert isinstance(msg, ConnectionError)
 
-        # Listen as above with specified timeout object.
-        stream_timeout_resp = srs.streams(streams=streams, block=10, timeout_response="Arbitrary Response")
-        msg = stream_timeout_resp.next()
-        assert (msg == "Arbitrary Response")
+        # simulate restored connection
+        strm_ret_conn_loss.connection = real_connection
+        msg = strm_ret_conn_loss.next()
+        assert msg is None
 
-        messages_from_args = [msg for msg in srs.streams(**streams_from_start_dict)]
-        assert(len(messages_from_args) == message_num*3)
-        check_response_order(messages_from_args)
-
-        messages_from_streamdict = [msg for msg in srs.streams(streams=streams_from_start_dict)]
-        assert(len(messages_from_streamdict) == message_num*3)
-        check_response_order(messages_from_streamdict)
-
-        messages_from_list = [msg for msg in srs.streams(streams=streams)]
-        assert(messages_from_list == [])
-
-        messages_from_set = [msg for msg in srs.streams(streams=set(streams_from_start_dict))]
-        assert(messages_from_set == [])
 
 
 

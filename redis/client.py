@@ -2501,7 +2501,10 @@ class Streams(object):
         self.count = count
         self.timeout_response = timeout_response
         self.sanitize_stream_starts()
-        self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
+        try:
+                self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
+        except Exception as e:
+            ryan=1
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
         self.raise_connection_exceptions = raise_connection_exceptions
@@ -2519,6 +2522,12 @@ class Streams(object):
     def sanitize_stream_starts(self):
         for stream_name, next_index in self.streams.items():
             bad_format = False
+            if isinstance(next_index, int):
+                self.streams[stream_name] = str(next_index) + "-0"
+                continue
+            if isinstance(next_index, bytes):
+                next_index = next_index.decode()
+
             if next_index == "$" or next_index is None:
                 lastmsg = self.connection.xrevrange(stream_name, count=1)
                 if lastmsg:
@@ -2541,7 +2550,6 @@ class Streams(object):
 
             if bad_format:
                 raise ValueError("Streams values, if specified, must be integers, None, '$', or a Redis Index.")
-
 
 
     def get_lowest(self):
