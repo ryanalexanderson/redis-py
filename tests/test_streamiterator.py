@@ -48,21 +48,24 @@ class TestPubSubSubscribeUnsubscribe(object):
 
         # Test that all messages from 0 to end are returned in order...
         # ...using keyword args
-        messages_from_args = [msg for msg in srs.streams(**first_3_streams_dict)]
+        messages_from_args = [msg for msg in srs.streams(block=0, stop_on_timeout=True, **first_3_streams_dict)]
         assert(len(messages_from_args) == message_num*3)
         check_response_order(messages_from_args)
 
         # ...using the streams keyword
-        messages_from_streamdict = [msg for msg in srs.streams(streams=first_3_streams_dict)]
+        messages_from_streamdict = [msg for msg in srs.streams(streams=first_3_streams_dict, block=0,
+                                                               stop_on_timeout=True)]
         assert(len(messages_from_streamdict) == message_num*3)
         check_response_order(messages_from_streamdict)
 
         # ...using a list (which will return an empty list as it is listening from now)
-        messages_from_list = [msg for msg in srs.streams(streams=first_3_streams_dict.keys())]
+        messages_from_list = [msg for msg in srs.streams(streams=first_3_streams_dict.keys(), block=0,
+                                                         stop_on_timeout=True)]
         assert(messages_from_list == [])
 
         # ...using a set (which will also return an empty list as it is listening from now)
-        messages_from_set = [msg for msg in srs.streams(streams=set(first_3_streams_dict.keys()))]
+        messages_from_set = [msg for msg in srs.streams(streams=set(first_3_streams_dict.keys()), block=0,
+                                                        stop_on_timeout=True)]
         assert(messages_from_set == [])
 
         # Grab a message somewhere in the middle of the messages_from_args to get an intermediate timestamp
@@ -71,11 +74,13 @@ class TestPubSubSubscribeUnsubscribe(object):
         middle_ts, middle_subindex = middle_index.split("-")
 
         # ...using an intermediate index
-        messages_from_index = [msg for msg in srs.streams(streams={middle_stream: middle_index})]
+        messages_from_index = [msg for msg in srs.streams(streams={middle_stream: middle_index}, block=0,
+                                                          stop_on_timeout=True)]
         assert(len(messages_from_index) > 0)
 
         # ...using just the timestamp of the index, byte-encoded if python 3
-        messages_from_timestamp = [msg for msg in srs.streams(streams={middle_stream.encode(): middle_ts.encode()})]
+        messages_from_timestamp = [msg for msg in srs.streams(streams={middle_stream.encode(): middle_ts.encode()},
+                                                              block=0, stop_on_timeout=True)]
         assert(len(messages_from_timestamp) > 0)
 
     @skip_if_server_version_lt('4.9.0')

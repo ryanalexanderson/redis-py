@@ -688,7 +688,7 @@ class StrictRedis(object):
         """
         return PubSub(self.connection_pool, **kwargs)
 
-    def streams(self, count=100, block=None, timeout_response=None,
+    def streams(self, count=100, block=1000, timeout_response=None,
                      stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
         """
         Return an iterable Streams object. With this object, you can
@@ -2470,13 +2470,13 @@ class Streams(object):
     Stream is an iterator object that provides record-by-record access to a
     collection of Redis Streams. Messages are returned in order of index, regardless of stream.
 
-    Stream names and starting id's are provided through the 'stream' input dict and/or kwargs. If 'block'
-    is set, than after 'block' ms a timeout response will be returned (default None) but iteration will
-    continue. If 'block' is left as None, then iteration will stop if no new data arrives. Iteration will
-    also stop after a nonzero block time if 'stop_on_timeout' is explicitly set. Redis Exceptions will be
-    raised during iteration if stop_on_exception is True (otherwise, the exception will be returned but not raised).
+    Stream names and starting id's are provided through the 'stream' input dict and/or kwargs. After 'block' ms a
+    timeout response will be returned (default 1000, or one second) but iteration will continue. If 'block' is set to
+    None or False, then iteration will stop if no new data arrives. Iteration will also stop after a nonzero block time
+    if 'stop_on_timeout' is explicitly set. Redis Exceptions will be raised during iteration if stop_on_exception is
+    True (otherwise, the exception will be returned but not raised).
     """
-    def __init__(self, redis_conn, count=100, block=None, timeout_response=None,
+    def __init__(self, redis_conn, count=100, block=1000, timeout_response=None,
                  stop_on_timeout=False, raise_connection_exceptions=True, streams=None, **kwargs):
         self.BIG_NUMBER = b"99999999999999"
         self.block = block if block else 1
