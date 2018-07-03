@@ -2483,6 +2483,8 @@ class Streams(object):
         self.topic_hit_limit = set()
 
         if streams is None:
+            if not len(kwargs):
+                raise RedisError("No streams specified, either in streams= or kwargs.")
             self.streams = {}
         elif isinstance(streams, set) or isinstance(streams, list):
             self.streams = dict([(x, "$") for x in streams])
@@ -2544,7 +2546,7 @@ class Streams(object):
             else:
                 try:
                     int(next_index)
-                    self.streams[stream_name] = str(stream_name)+"-0"
+                    self.streams[stream_name] = str(next_index)+"-0"
                 except ValueError:
                     bad_format = True
 
