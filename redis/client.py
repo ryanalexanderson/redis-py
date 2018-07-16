@@ -2510,10 +2510,7 @@ class Streams(object):
         self.count = count
         self.timeout_response = timeout_response
         self.sanitize_stream_starts()
-        try:
-                self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
-        except Exception as e:
-            ryan=1
+        self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
         self.raise_connection_exceptions = raise_connection_exceptions
