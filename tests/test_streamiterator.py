@@ -59,7 +59,7 @@ class TestPubSubSubscribeUnsubscribe(object):
         check_response_order(messages_from_streamdict)
 
         # ...using a list (which will return an empty list as it is listening from now)
-        messages_from_list = [msg for msg in srs.streams(streams=first_3_streams_dict.keys(), block=0,
+        messages_from_list = [msg for msg in srs.streams(streams=list(first_3_streams_dict.keys()), block=0,
                                                          stop_on_timeout=True)]
         assert(messages_from_list == [])
 
@@ -71,6 +71,8 @@ class TestPubSubSubscribeUnsubscribe(object):
         # Grab a message somewhere in the middle of the messages_from_args to get an intermediate timestamp
         middle_stream = messages_from_args[message_num-1][0]
         middle_index = messages_from_args[message_num-1][1]
+        if isinstance(middle_index, bytes):
+            middle_index = middle_index.decode()
         middle_ts, middle_subindex = middle_index.split("-")
 
         # ...using an intermediate index

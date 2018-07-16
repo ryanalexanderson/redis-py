@@ -688,13 +688,13 @@ class StrictRedis(object):
         """
         return PubSub(self.connection_pool, **kwargs)
 
-    def streams(self, count=100, block=1000, timeout_response=None,
+    def streams(self, streams=None, count=100, block=1000, timeout_response=None,
                      stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
         """
         Return an iterable Streams object. With this object, you can
         iterate through multiple redis streams.
         """
-        return Streams(self.connection_pool, count=count, block=block,
+        return Streams(self.connection_pool, streams=streams, count=count, block=block,
                       timeout_response=timeout_response, stop_on_timeout=stop_on_timeout,
                       raise_connection_exceptions=raise_connection_exceptions, **kwargs)
 
@@ -2476,8 +2476,8 @@ class Streams(object):
     if 'stop_on_timeout' is explicitly set. Redis Exceptions will be raised during iteration if stop_on_exception is
     True (otherwise, the exception will be returned but not raised).
     """
-    def __init__(self, redis_conn, count=100, block=1000, timeout_response=None,
-                 stop_on_timeout=False, raise_connection_exceptions=True, streams=None, **kwargs):
+    def __init__(self, redis_conn=None, streams=None, count=100, block=1000, timeout_response=None,
+                 stop_on_timeout=False, raise_connection_exceptions=True, **kwargs):
         self.BIG_NUMBER = b"99999999999999"
         self.block = block if block else 1
         self.topic_hit_limit = set()
@@ -2485,15 +2485,22 @@ class Streams(object):
         if streams is None:
             if not len(kwargs):
                 raise RedisError("No streams specified, either in streams= or kwargs.")
-            self.streams = {}
+            streams = {}
         elif isinstance(streams, set) or isinstance(streams, list):
-            self.streams = dict([(x, "$") for x in streams])
+            streams = dict([(x, "$") for x in streams])
         elif isinstance(streams, dict):
-            self.streams = streams
+            pass
         else:
             raise RedisError("streams must be a dict, set, list, or None.")
 
-        self.streams.update(kwargs)
+        self.streams = {}
+        streams.update(kwargs)
+        for (k,v) in streams.items():
+            if isinstance(k, bytes):
+                self.streams[k.decode()] = v
+            else:
+                self.streams[k] = v
+
         if isinstance(redis_conn, StrictRedis):
             self.connection_pool = redis_conn.connection_pool
             self.connection = redis_conn
