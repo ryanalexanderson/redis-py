@@ -58,6 +58,12 @@ class TestPubSubSubscribeUnsubscribe(object):
         assert(len(messages_from_streamdict) == message_num*3)
         check_response_order(messages_from_streamdict)
 
+        # ...using a really short count
+        messages_short_limit = [msg for msg in srs.streams(streams=first_3_streams_dict, block=0, count=3,
+                                                               stop_on_timeout=True, )]
+        assert(len(messages_short_limit) == message_num*3)
+        check_response_order(messages_short_limit)
+
         # ...using a list (which will return an empty list as it is listening from now)
         messages_from_list = [msg for msg in srs.streams(streams=list(first_3_streams_dict.keys()), block=0,
                                                          stop_on_timeout=True)]
