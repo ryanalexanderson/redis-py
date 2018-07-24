@@ -2481,6 +2481,8 @@ class Streams(object):
         self.BIG_NUMBER = b"99999999999999"
         self.block = block if block else 1
         self.topic_hit_limit = set()
+        if isinstance(streams, str):
+            streams=[streams]
 
         if streams is None:
             if not len(kwargs):
@@ -2491,7 +2493,7 @@ class Streams(object):
         elif isinstance(streams, dict):
             pass
         else:
-            raise RedisError("streams must be a dict, set, list, or None.")
+            raise RedisError("streams must be a string, dict, set, list, or None.")
 
         self.streams = {}
         streams.update(kwargs)
