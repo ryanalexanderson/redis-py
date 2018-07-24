@@ -2511,12 +2511,12 @@ class Streams(object):
         self.timeout_response = timeout_response
         self.sanitize_stream_starts()
         self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
+        self.topic_hit_limit = set()
+        self.remove_from_limit = list()
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
         self.raise_connection_exceptions = raise_connection_exceptions
         self.connectionError = False
-        self.topic_hit_limit = set()
-        self.remove_from_limit = list()
 
     def update_last_and_limit(self):
         if self.buffer_dict is not None:
