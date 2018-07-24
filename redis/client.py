@@ -2516,6 +2516,7 @@ class Streams(object):
         self.raise_connection_exceptions = raise_connection_exceptions
         self.connectionError = False
         self.topic_hit_limit = set()
+        self.remove_from_limit = list()
 
     def update_last_and_limit(self):
         if self.buffer_dict is not None:
@@ -2562,14 +2563,20 @@ class Streams(object):
         lowest_timestamp_str = self.BIG_NUMBER
         lowest_index = 9999
         lowest_stream = None
-        for stream_name, record_list in self.buffer_dict.items():
-            if stream_name in self.topic_hit_limit and len(record_list) == 0:
+        for stream_name in self.topic_hit_limit:
+            record_list = self.buffer_dict[stream_name]
+            if len(record_list) == 0:
                 temp_dict = self.connection.xread(self.count, 1,
                                                   **{stream_name: self.streams[stream_name]})
                 if len(temp_dict[stream_name]) < self.count:
-                    self.topic_hit_limit.remove(stream_name)
+                    self.remove_from_limit.append(stream_name)
                 self.buffer_dict[stream_name] = temp_dict[stream_name]
                 self.update_last_and_limit()
+
+        if self.remove_from_limit:
+            for remove_stream in self.remove_from_limit:
+                self.topic_hit_limit.remove(remove_stream)
+            self.remove_from_limit = []
 
         for stream_name, record_list in self.buffer_dict.items():
             if len(record_list):
