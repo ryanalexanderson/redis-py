@@ -2512,13 +2512,20 @@ class Streams(object):
         self.count = count
         self.timeout_response = timeout_response
         self.sanitize_stream_starts()
-        self.buffer_dict = self.connection.xread(self.count, None, **self.streams)
+        self.buffer_dict = self.fill_buffer_dict()
         self.topic_hit_limit = set()
         self.remove_from_limit = list()
         self.update_last_and_limit()
         self.stop_on_timeout = stop_on_timeout if block else True
         self.raise_connection_exceptions = raise_connection_exceptions
         self.connectionError = False
+
+    def fill_buffer_dict(self, block=None):
+        if len(self.streams):
+            return self.connection.xread(self.count, block, **self.streams)
+        else: # You want to listen to nothing? Sure, why not.
+            time.sleep(self.block / 1000.0)
+            return None
 
     def update_last_and_limit(self):
         if self.buffer_dict is not None:
@@ -2570,9 +2577,13 @@ class Streams(object):
             if len(record_list) == 0:
                 temp_dict = self.connection.xread(self.count, 1,
                                                   **{stream_name: self.streams[stream_name]})
-                if len(temp_dict[stream_name]) < self.count:
+                if temp_dict is None:
+                    self.buffer_dict[stream_name] = []
                     self.remove_from_limit.append(stream_name)
-                self.buffer_dict[stream_name] = temp_dict[stream_name]
+                else:
+                   if len(temp_dict[stream_name]) < self.count:
+                      self.remove_from_limit.append(stream_name)
+                   self.buffer_dict[stream_name] = temp_dict[stream_name]
                 self.update_last_and_limit()
 
         if self.remove_from_limit:
@@ -2604,7 +2615,7 @@ class Streams(object):
         if self.buffer_dict is None or not any(self.buffer_dict.values()):
             self.resolve_possible_connection_errors()
             try:
-                self.buffer_dict = self.connection.xread(self.count, self.block, **self.streams)
+                self.buffer_dict = self.fill_buffer_dict(block=self.block)
             except ConnectionError as e:
                 if self.raise_connection_exceptions:
                     raise e
