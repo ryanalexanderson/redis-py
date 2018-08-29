@@ -255,7 +255,7 @@ def multi_stream_list(response):
         return None
     result = dict()
     for r in response:
-        result[r[0].decode('utf-8')] = stream_list(r[1])
+        result[r[0].decode('utf-8') if isinstance(r[0],bytes) else r[0]] = stream_list(r[1])
     return result
 
 
